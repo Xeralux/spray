@@ -110,32 +110,30 @@ private[can] class HttpRequestPartParser(_settings: ParserSettings, rawRequestUr
   def parseEntity(headers: List[HttpHeader], input: ByteString, bodyStart: Int, clh: Option[`Content-Length`],
                   cth: Option[`Content-Type`], teh: Option[`Transfer-Encoding`], hostHeaderPresent: Boolean,
                   closeAfterResponseCompletion: Boolean): Result =
-    if (hostHeaderPresent || protocol == HttpProtocols.`HTTP/1.0`) {
-      teh match {
-        case Some(`Transfer-Encoding`(Seq("chunked"))) ⇒
-          if (clh.isEmpty)
-            emit(chunkStartMessage(headers), closeAfterResponseCompletion) {
-              parseChunk(input, bodyStart, closeAfterResponseCompletion)
-            }
-          else fail("A chunked request must not contain a Content-Length header.")
-
-        case None | Some(`Transfer-Encoding`(Seq("identity"))) ⇒
-          val contentLength = clh match {
-            case Some(`Content-Length`(len)) ⇒ len
-            case None                        ⇒ 0
+    teh match {
+      case Some(`Transfer-Encoding`(Seq("chunked"))) ⇒
+        if (clh.isEmpty)
+          emit(chunkStartMessage(headers), closeAfterResponseCompletion) {
+            parseChunk(input, bodyStart, closeAfterResponseCompletion)
           }
-          if (contentLength == 0)
-            emit(message(headers, HttpEntity.Empty), closeAfterResponseCompletion) {
-              parseMessageSafe(input, bodyStart)
-            }
-          else if (contentLength <= settings.maxContentLength)
-            parseFixedLengthBody(headers, input, bodyStart, contentLength, cth, closeAfterResponseCompletion)
-          else fail(RequestEntityTooLarge, s"Request Content-Length $contentLength exceeds the configured limit of " +
-            settings.maxContentLength)
+        else fail("A chunked request must not contain a Content-Length header.")
 
-        case Some(te) ⇒ fail(NotImplemented, s"$te is not supported by this server")
-      }
-    } else fail("Request is missing required `Host` header")
+      case None | Some(`Transfer-Encoding`(Seq("identity"))) ⇒
+        val contentLength = clh match {
+          case Some(`Content-Length`(len)) ⇒ len
+          case None                        ⇒ 0
+        }
+        if (contentLength == 0)
+          emit(message(headers, HttpEntity.Empty), closeAfterResponseCompletion) {
+            parseMessageSafe(input, bodyStart)
+          }
+        else if (contentLength <= settings.maxContentLength)
+          parseFixedLengthBody(headers, input, bodyStart, contentLength, cth, closeAfterResponseCompletion)
+        else fail(RequestEntityTooLarge, s"Request Content-Length $contentLength exceeds the configured limit of " +
+          settings.maxContentLength)
+
+      case Some(te) ⇒ fail(NotImplemented, s"$te is not supported by this server")
+    }
 
   def message(headers: List[HttpHeader], entity: HttpEntity) = {
     val requestHeaders =
